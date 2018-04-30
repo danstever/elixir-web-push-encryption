@@ -18,24 +18,29 @@ defmodule WebPushEncryption.Push do
        It should have the following form: `%{keys: %{auth: AUTH, p256dh: P256DH}, endpoint: ENDPOINT}`
     * `auth_token` [Optional] is the GCM api key matching the `gcm_sender_id` from the client `manifest.json`.
        It is not necessary for Mozilla endpoints.
+    * `vapid_detail` [Optional] is the public key and private key (formatted as a url safe base64 string with no
+       padding), and subscriper, which is a mailto link for an administrative contact for the website.
 
   ## Return value
 
   Returns the result of `HTTPoison.post`
   """
-  @spec send_web_push(message :: binary, subscription :: map, auth_token :: binary | nil) ::
-          {:ok, any} | {:error, atom}
-  def send_web_push(message, subscription, auth_token \\ nil)
 
-  def send_web_push(_message, %{endpoint: @gcm_url <> _registration_id}, nil) do
+  @spec vapid_detail :: {:public_key :: String.t, :private_key :: String.t, :subject :: String.t}
+
+  @spec send_web_push(message :: binary, subscription :: map, auth_token :: binary | nil, vapid_details :: vapid_detail | nil) ::
+          {:ok, any} | {:error, atom}
+  def send_web_push(message, subscription, auth_token \\ nil, vapid_details \\ nil)
+
+  def send_web_push(_message, %{endpoint: @gcm_url <> _registration_id}, nil, nil) do
     raise ArgumentError, "send_web_push requires an auth_token for gcm endpoints"
   end
 
-  def send_web_push(message, %{endpoint: endpoint} = subscription, auth_token) do
+  def send_web_push(message, %{endpoint: endpoint} = subscription, auth_token, vapid_details) do
     payload = WebPushEncryption.Encrypt.encrypt(message, subscription)
 
     headers =
-      Vapid.get_headers(make_audience(endpoint), "aesgcm")
+      Vapid.get_headers(make_audience(endpoint), "aesgcm", nil, vapid_details)
       |> Map.merge(%{
         "TTL" => "0",
         "Content-Encoding" => "aesgcm",
@@ -50,7 +55,7 @@ defmodule WebPushEncryption.Push do
     http_client().post(endpoint, payload.ciphertext, headers)
   end
 
-  def send_web_push(_message, _subscription, _auth_token) do
+  def send_web_push(_message, _subscription, _auth_token, _vapid_details) do
     raise ArgumentError,
           "send_web_push expects a subscription endpoint with an endpoint parameter"
   end
